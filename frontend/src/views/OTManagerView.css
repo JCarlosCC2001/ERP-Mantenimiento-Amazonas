@@ -1,0 +1,568 @@
+/* --- ESTILOS DE GESTIÓN DE OTS --- */
+
+.ot-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.ot-detail-section {
+  min-width: 0;
+}
+
+/* Layout principal (dos columnas) */
+.ot-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  transition: grid-template-columns 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  align-items: start;
+}
+
+.ot-layout.has-selection {
+  grid-template-columns: 1.05fr 0.95fr;
+}
+
+@media (max-width: 1100px) {
+  .ot-layout.has-selection {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Strip de métricas rápidas */
+.ot-metrics-strip {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0.85rem 1.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ot-metric-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+}
+
+.ot-metric-num {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-family: var(--font-family-title);
+  line-height: 1;
+}
+
+.ot-metric-lbl {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.ot-metric-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--border-color);
+  flex-shrink: 0;
+}
+
+/* Filtros */
+.ot-filters-card {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.filter-search {
+  max-width: 100%;
+}
+
+.filter-label-text {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  width: 70px;
+  display: inline-block;
+  font-weight: 500;
+}
+
+/* Contador de resultados */
+.ot-list-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 0 0.25rem 0.5rem 0.25rem;
+}
+
+/* Lista de OTs */
+.ot-items-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: calc(100vh - 320px);
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+/* Scrollbar para lista de OTs */
+.ot-items-container::-webkit-scrollbar {
+  width: 5px;
+}
+.ot-items-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ot-items-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+.ot-items-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Tarjeta de OT en la lista */
+.ot-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  background: var(--bg-card);
+  transition: all 0.2s ease;
+  gap: 1rem;
+}
+
+.ot-list-item:hover {
+  border-left-color: rgba(255, 255, 255, 0.2);
+  background: var(--bg-card-hover);
+  transform: translateX(2px);
+}
+
+.ot-list-item.selected {
+  background: rgba(99, 102, 241, 0.06);
+  box-shadow: 0 2px 16px rgba(99, 102, 241, 0.08);
+  transform: translateX(2px);
+}
+
+.ot-item-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.ot-item-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ot-id-label {
+  font-size: 0.975rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-family-title);
+}
+
+.tag-tipo-small {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ot-item-desc {
+  font-size: 0.825rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ot-item-date {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.ot-item-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.ot-item-chevron {
+  color: var(--text-muted);
+  opacity: 0.5;
+  margin-top: auto;
+}
+
+/* Badge con icono */
+.badge-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Vacío */
+.empty-list-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 2rem;
+  text-align: center;
+  color: var(--text-muted);
+  gap: 1rem;
+}
+
+/* ===== PANEL DE DETALLE PREMIUM ===== */
+
+.ot-detail-premium {
+  position: sticky;
+  top: 1.5rem;
+  max-height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ot-detail-title-block {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ot-detail-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+  flex-shrink: 0;
+}
+
+.ot-detail-body {
+  gap: 1.25rem !important;
+}
+
+/* Grid de metadatos */
+.ot-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+/* === TIMELINE === */
+.ot-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding-left: 0.25rem;
+}
+
+.ot-timeline-step {
+  display: grid;
+  grid-template-columns: 28px 20px 1fr;
+  gap: 0;
+  align-items: stretch;
+  min-height: 52px;
+}
+
+.ot-timeline-step.last-step {
+  min-height: auto;
+}
+
+.ot-tl-marker {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 2px;
+  width: 28px;
+  color: #4b5563;
+  flex-shrink: 0;
+  transition: color 0.3s;
+}
+
+.ot-timeline-step.completed .ot-tl-marker {
+  color: #34d399;
+}
+
+.ot-timeline-step.active .ot-tl-marker {
+  color: #818cf8;
+}
+
+.ot-tl-connector {
+  width: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 20px auto 0 auto;
+  flex: 1;
+  border-radius: 1px;
+  transition: background 0.3s;
+}
+
+.ot-timeline-step.completed .ot-tl-connector {
+  background: rgba(52, 211, 153, 0.3);
+}
+
+.ot-timeline-step.active .ot-tl-connector {
+  background: rgba(129, 140, 248, 0.25);
+}
+
+.ot-tl-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 0 1.1rem 0.75rem;
+}
+
+.ot-timeline-step.last-step .ot-tl-content {
+  padding-bottom: 0;
+}
+
+.ot-tl-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #6b7280;
+  transition: color 0.3s;
+}
+
+.ot-timeline-step.completed .ot-tl-title {
+  color: #d1d5db;
+}
+
+.ot-timeline-step.active .ot-tl-title {
+  color: #a5b4fc;
+}
+
+.ot-tl-time {
+  font-size: 0.75rem;
+  color: #4b5563;
+}
+
+.ot-timeline-step.completed .ot-tl-time {
+  color: #9ca3af;
+}
+
+/* Panel de acciones */
+.ot-action-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ot-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0.85rem 1.25rem;
+  font-size: 0.875rem;
+}
+
+/* Transición de cierre exitoso */
+.btn-success-transition {
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: white;
+  box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.3);
+}
+
+.btn-success-transition:hover {
+  background: linear-gradient(135deg, #047857, #059669);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px 0 rgba(16, 185, 129, 0.4);
+}
+
+.closed-ot-success {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--color-success-bg);
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  color: var(--color-success);
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Sin selección */
+.no-selected-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6rem 2rem;
+  text-align: center;
+  gap: 1.25rem;
+  color: var(--text-muted);
+  min-height: 300px;
+}
+
+.no-selected-card h3 {
+  color: var(--text-primary);
+}
+
+.no-selected-card p {
+  max-width: 320px;
+  font-size: 0.9rem;
+}
+
+/* Form Helper Text */
+.form-input-help {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.35rem;
+}
+
+/* ─── OT Card: report/CFM mini-badges ─── */
+.ot-item-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+
+.ot-badge-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.ot-badge-selnet {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.ot-badge-gilat {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+.ot-badge-cfm {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+/* ─── Docs & Reports panel in OT detail ─── */
+.ot-docs-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.ot-docs-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ot-doc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.ot-doc-badge--yes {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.ot-doc-badge--no {
+  background: rgba(255, 255, 255, 0.04);
+  color: #6b7280;
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+.ot-doc-badge--cfm {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.ot-doc-badge--none {
+  background: rgba(255, 255, 255, 0.04);
+  color: #6b7280;
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+/* ─── CFM Parada de Reloj timeline step ─── */
+.ot-timeline-step.cfm-stop .ot-tl-marker.cfm-marker {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 2px solid rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.25);
+}
+
+.ot-timeline-step.cfm-stop .ot-tl-connector {
+  background: rgba(245, 158, 11, 0.3);
+}
+
+.cfm-title {
+  color: #fbbf24 !important;
+}
+
+.ot-timeline-step.cfm-stop .ot-tl-time {
+  color: #d97706;
+  font-style: italic;
+}
+
+.ot-tl-subtitle {
+  display: block;
+  font-size: 0.73rem;
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.08);
+  border-left: 2px solid rgba(245, 158, 11, 0.4);
+  padding: 3px 7px;
+  margin-top: 4px;
+  border-radius: 0 4px 4px 0;
+  line-height: 1.4;
+  font-style: normal;
+}
+
+

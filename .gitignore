@@ -1,0 +1,30 @@
+# Google Sheets credentials (highly sensitive)
+backend/tensile-impact-499801-g7-64b8caecbe2c.json
+
+# SQLite local databases
+backend/mantenimiento_amazonas.db
+*.db
+*.sqlite
+
+# Python dependencies and environments
+.venv/
+backend/.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node dependencies and build folders
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# Local logs
+*.log
+logs/
+
+# IDE/Editor directories
+.vscode/
+.idea/
+.DS_Store
+*.suo

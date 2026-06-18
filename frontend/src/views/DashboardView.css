@@ -1,0 +1,227 @@
+/* --- ESTILOS DE DASHBOARD --- */
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 1.5rem;
+}
+
+.spinner {
+  width: 3rem;
+  height: 3rem;
+  border: 4px solid var(--border-color);
+  border-top-color: var(--color-primary);
+  border-radius: var(--radius-full);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-card {
+  max-width: 600px;
+  margin: 4rem auto;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.error-icon {
+  color: var(--color-danger);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Glows de las tarjetas de métricas */
+.el-glow { background: rgba(99, 102, 241, 0.1); }
+.ot-glow { background: rgba(245, 158, 11, 0.1); }
+.pending-glow { background: rgba(6, 182, 212, 0.1); }
+.success-glow { background: rgba(16, 185, 129, 0.1); }
+
+.icon-primary { color: var(--color-primary); }
+.icon-warning { color: var(--color-warning); }
+.icon-info { color: var(--color-info); }
+.icon-success { color: var(--color-success); }
+
+/* Analytics grid layouts */
+.analytics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+}
+
+@media (max-width: 768px) {
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.analytics-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 0.5rem;
+}
+
+.breakdown-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.breakdown-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.breakdown-value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--transition-slow);
+}
+
+.fill-primary { background: var(--color-primary); }
+.fill-secondary { background: var(--color-secondary); }
+.fill-info { background: var(--color-info); }
+
+/* Dashboard OT Status layout */
+.ot-status-breakdown {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.status-grid-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 1rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  transition: border-color var(--transition-fast);
+}
+
+.status-grid-item:hover {
+  border-color: var(--text-muted);
+}
+
+.status-number {
+  font-size: 1.5rem;
+  font-family: var(--font-family-title);
+  font-weight: 700;
+}
+
+.status-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.text-purple { color: var(--color-secondary); }
+.text-info { color: var(--color-info); }
+.text-warning { color: var(--color-warning); }
+.text-success { color: var(--color-success); }
+
+/* Priority pill styling */
+.priority-distribution {
+  border-top: 1px solid var(--border-color);
+  padding-top: 1.25rem;
+}
+
+.priority-distribution h4 {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.priority-pills {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.prio-pill {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  border: 1px solid transparent;
+}
+
+.pill-alta {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-color: rgba(239, 68, 68, 0.1);
+}
+
+.pill-media {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border-color: rgba(245, 158, 11, 0.1);
+}
+
+.pill-baja {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+  border-color: rgba(6, 182, 212, 0.1);
+}
+
+/* Recent activity tables styles */
+.recent-activity-card {
+  margin-top: 1.5rem;
+}
+
+.no-data-msg {
+  text-align: center;
+  padding: 3rem 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+.text-truncate {
+  max-width: 250px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
