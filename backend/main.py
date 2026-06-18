@@ -3,8 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import List, Optional, Any, Dict
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 from ot_manager import OTManager
+from supabase_ot_manager import SupabaseOTManager
 from sheets_service import sheets_service
+from security import verify_password
 
 app = FastAPI(
     title="ERP Mantenimiento Amazonas API",
@@ -21,8 +27,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Inicializar gestor de base de datos
-ot_db = OTManager()
+# Inicializar gestor de base de datos dinámicamente
+use_supabase = os.environ.get("USE_SUPABASE", "false").lower() == "true"
+if use_supabase:
+    print("Iniciando con base de datos SUPABASE (PostgreSQL)...")
+    ot_db = SupabaseOTManager()
+else:
+    print("Iniciando con base de datos SQLite local...")
+    ot_db = OTManager()
 
 # --- MODELOS PYDANTIC ---
 
@@ -30,13 +42,27 @@ class ElementoCreate(BaseModel):
     id_elemento: str = Field(..., description="ID único del elemento (ej. NOD-001, IAO-102)")
     nombre: str = Field(..., description="Nombre descriptivo del elemento")
     tipo: str = Field(..., description="Debe ser 'Nodo', 'IAO' o 'Hotspot'")
-    ubicacion: Optional[str] = Field(None, description="Distrito o coordenadas de ubicación")
+    pendiente: Optional[str] = None
+    categoria: Optional[str] = None
+    dependencia: Optional[str] = None
+    provincia: Optional[str] = None
+    distrito: Optional[str] = None
+    localidad: Optional[str] = None
+    latitud: Optional[str] = None
+    longitud: Optional[str] = None
 
 class ElementoResponse(BaseModel):
     id_elemento: str
     nombre: str
     tipo: str
-    ubicacion: Optional[str]
+    pendiente: Optional[str] = None
+    categoria: Optional[str] = None
+    dependencia: Optional[str] = None
+    provincia: Optional[str] = None
+    distrito: Optional[str] = None
+    localidad: Optional[str] = None
+    latitud: Optional[str] = None
+    longitud: Optional[str] = None
 
 class OTCreate(BaseModel):
     id_ot: str = Field(..., description="ID único de la OT (ej. OT-2026-0001)")
@@ -72,6 +98,42 @@ class TransitionRequest(BaseModel):
     timestamp: Optional[datetime] = Field(None, description="Fecha/hora del cambio de estado. Por defecto es ahora")
 
 
+# --- MODELOS PYDANTIC DE PERSONAL Y AUTENTICACIÓN ---
+
+class PersonalCreate(BaseModel):
+    nombre: str = Field(..., description="Nombre completo del personal")
+    cargo: Optional[str] = Field(None, description="Cargo o puesto")
+    cm: Optional[str] = Field(None, description="Centro de Mantenimiento asignado")
+    estado: Optional[str] = Field('Activo', description="Estado: 'Activo' o 'Inactivo'")
+    email: Optional[str] = Field(None, description="Correo electrónico (se auto-genera si no se envía)")
+
+class PersonalResponse(BaseModel):
+    id_personal: int
+    nombre: str
+    cargo: Optional[str] = None
+    cm: Optional[str] = None
+    estado: Optional[str] = None
+    email: str
+
+class PersonalUpdate(BaseModel):
+    nombre: Optional[str] = None
+    cargo: Optional[str] = None
+    cm: Optional[str] = None
+    estado: Optional[str] = None
+    email: Optional[str] = None
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., description="Correo electrónico del usuario")
+    password: str = Field(..., description="Contraseña del usuario")
+
+class LoginResponse(BaseModel):
+    id_personal: int
+    nombre: str
+    cargo: Optional[str] = None
+    email: str
+    token: str = "session_ok"  # Placeholder para futura implementación de JWT
+
+
 # --- FUNCIONES DE MAPEO INTELIGENTE PARA GOOGLE SHEETS ---
 
 def map_row_to_elemento(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -85,7 +147,15 @@ def map_row_to_elemento(row: Dict[str, Any]) -> Dict[str, Any]:
     id_el = str(get_val(["código", "codigo", "código nodo", "codigo nodo", "id_elemento", "id"], "") or "").strip()
     nombre = str(get_val(["nombre", "nombre nodo", "nodo", "nombre_elemento", "descripcion", "descripción"], "") or "").strip()
     tipo = str(get_val(["tipo", "type", "clase"], "Nodo") or "Nodo").strip()
-    ubicacion = str(get_val(["ubicacion", "ubicación", "distrito", "provincia", "direccion", "dirección"], "") or "").strip()
+    
+    pendiente = str(get_val(["pendiente"], "") or "").strip()
+    categoria = str(get_val(["categoría", "categoria"], "") or "").strip()
+    dependencia = str(get_val(["dependencia"], "") or "").strip()
+    provincia = str(get_val(["provincia"], "") or "").strip()
+    distrito = str(get_val(["distrito"], "") or "").strip()
+    localidad = str(get_val(["localidad"], "") or "").strip()
+    latitud = str(get_val(["latitud"], "") or "").strip()
+    longitud = str(get_val(["longitud"], "") or "").strip()
 
     # Normalizar tipo: Considerar que las IAO son (Centro de salud, Comisaría y Institución Educativa)
     tipo_lower = tipo.lower()
@@ -121,7 +191,14 @@ def map_row_to_elemento(row: Dict[str, Any]) -> Dict[str, Any]:
         "id_elemento": id_el if id_el else "EL-GENERIC",
         "nombre": nombre if nombre else f"Elemento {id_el}",
         "tipo": tipo,
-        "ubicacion": ubicacion
+        "pendiente": pendiente,
+        "categoria": categoria,
+        "dependencia": dependencia,
+        "provincia": provincia,
+        "distrito": distrito,
+        "localidad": localidad,
+        "latitud": latitud,
+        "longitud": longitud
     }
 
 def map_row_to_ot(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -426,3 +503,83 @@ def get_cfms():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al obtener datos de CFMs: {str(e)}")
 
+
+# --- ENDPOINTS DE PERSONAL ---
+
+@app.get("/api/personal", response_model=List[PersonalResponse], tags=["Personal"])
+def get_personal():
+    """Lista todo el personal registrado en el sistema."""
+    try:
+        return ot_db.listar_personal()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/personal/{id_personal}", response_model=PersonalResponse, tags=["Personal"])
+def get_personal_by_id(id_personal: int):
+    """Obtiene los datos de un miembro del personal por su ID."""
+    try:
+        persona = ot_db.obtener_personal(id_personal)
+        if not persona:
+            raise HTTPException(status_code=404, detail=f"Personal con ID {id_personal} no encontrado.")
+        return persona
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/personal/{id_personal}", response_model=PersonalResponse, tags=["Personal"])
+def update_personal(id_personal: int, datos: PersonalUpdate):
+    """Actualiza los datos de un miembro del personal."""
+    try:
+        persona = ot_db.obtener_personal(id_personal)
+        if not persona:
+            raise HTTPException(status_code=404, detail=f"Personal con ID {id_personal} no encontrado.")
+        ot_db.actualizar_personal(id_personal, datos.model_dump(exclude_none=True))
+        return ot_db.obtener_personal(id_personal)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ENDPOINTS DE AUTENTICACIÓN ---
+
+@app.post("/api/auth/login", response_model=LoginResponse, tags=["Autenticación"])
+def login(credentials: LoginRequest):
+    """
+    Autentica a un usuario con su correo y contraseña.
+    La contraseña se verifica contra el hash bcrypt almacenado en la base de datos.
+    """
+    try:
+        usuario = ot_db.obtener_personal_por_email(credentials.email.lower().strip())
+        if not usuario:
+            raise HTTPException(
+                status_code=401,
+                detail="Correo electrónico o contraseña incorrectos."
+            )
+        
+        # Verificar la contraseña contra el hash almacenado
+        if not verify_password(credentials.password, usuario.get("password_hash", "")):
+            raise HTTPException(
+                status_code=401,
+                detail="Correo electrónico o contraseña incorrectos."
+            )
+        
+        # Verificar que el usuario esté activo
+        if usuario.get("estado", "Activo") == "Inactivo":
+            raise HTTPException(
+                status_code=403,
+                detail="La cuenta está desactivada. Contacta al administrador."
+            )
+        
+        return {
+            "id_personal": usuario["id_personal"],
+            "nombre": usuario["nombre"],
+            "cargo": usuario.get("cargo"),
+            "email": usuario["email"],
+            "token": "session_ok"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

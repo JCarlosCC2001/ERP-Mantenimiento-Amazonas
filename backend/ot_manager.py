@@ -44,7 +44,14 @@ class OTManager:
                             id_elemento TEXT PRIMARY KEY,
                             nombre TEXT NOT NULL,
                             tipo TEXT CHECK(tipo IN ('Nodo', 'IAO', 'Hotspot')) NOT NULL,
-                            ubicacion TEXT
+                            pendiente TEXT,
+                            categoria TEXT,
+                            dependencia TEXT,
+                            provincia TEXT,
+                            distrito TEXT,
+                            localidad TEXT,
+                            latitud TEXT,
+                            longitud TEXT
                         );
                     """)
                     conn.execute("""
@@ -64,21 +71,37 @@ class OTManager:
 
     # --- CRUD DE ELEMENTOS ---
 
-    def registrar_elemento(self, id_elemento: str, nombre: str, tipo: str, ubicacion: Optional[str] = None) -> bool:
-        """Registra un nuevo elemento (Nodo, IAO, Hotspot) en el sistema."""
+    def registrar_elemento(self, id_elemento: str, nombre: str, tipo: str, 
+                           pendiente: Optional[str] = None, categoria: Optional[str] = None,
+                           dependencia: Optional[str] = None, provincia: Optional[str] = None,
+                           distrito: Optional[str] = None, localidad: Optional[str] = None,
+                           latitud: Optional[str] = None, longitud: Optional[str] = None) -> bool:
+        """Registra un nuevo elemento en el sistema SQLite."""
         if tipo not in ('Nodo', 'IAO', 'Hotspot'):
             raise ValueError("El tipo de elemento debe ser 'Nodo', 'IAO' o 'Hotspot'.")
         
         with self._get_connection() as conn:
             try:
                 conn.execute(
-                    "INSERT INTO elementos (id_elemento, nombre, tipo, ubicacion) VALUES (?, ?, ?, ?)",
-                    (id_elemento.strip(), nombre.strip(), tipo, ubicacion.strip() if ubicacion else None)
+                    """
+                    INSERT INTO elementos (id_elemento, nombre, tipo, pendiente, categoria, dependencia, provincia, distrito, localidad, latitud, longitud) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        id_elemento.strip(), nombre.strip(), tipo,
+                        pendiente.strip() if pendiente else None,
+                        categoria.strip() if categoria else None,
+                        dependencia.strip() if dependencia else None,
+                        provincia.strip() if provincia else None,
+                        distrito.strip() if distrito else None,
+                        localidad.strip() if localidad else None,
+                        latitud.strip() if latitud else None,
+                        longitud.strip() if longitud else None
+                    )
                 )
                 conn.commit()
                 return True
             except sqlite3.IntegrityError as e:
-                # Elemento ya existe u otra restricción
                 raise ValueError(f"No se pudo registrar el elemento {id_elemento}: {e}")
 
     def obtener_elemento(self, id_elemento: str) -> Optional[Dict[str, Any]]:

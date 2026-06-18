@@ -187,3 +187,60 @@ export async function fetchCFMs(): Promise<CFM[]> {
   }
   return response.json();
 }
+
+// --- SERVICIOS DE PERSONAL Y AUTENTICACIÓN ---
+
+export interface Personal {
+  id_personal: number;
+  nombre: string;
+  cargo?: string;
+  cm?: string;
+  estado?: string;
+  email: string;
+}
+
+export interface AuthUser {
+  id_personal: number;
+  nombre: string;
+  cargo?: string;
+  email: string;
+  token: string;
+}
+
+export async function loginUser(email: string, password: string): Promise<AuthUser> {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Correo electrónico o contraseña incorrectos.');
+  }
+  return response.json();
+}
+
+export async function fetchPersonal(): Promise<Personal[]> {
+  const response = await fetch(`${API_BASE_URL}/personal`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Error al obtener el personal');
+  }
+  return response.json();
+}
+
+export async function updatePersonal(
+  id: number,
+  datos: Partial<Omit<Personal, 'id_personal' | 'email'>>
+): Promise<Personal> {
+  const response = await fetch(`${API_BASE_URL}/personal/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Error al actualizar el personal');
+  }
+  return response.json();
+}

@@ -6,7 +6,14 @@ CREATE TABLE IF NOT EXISTS elementos (
     id_elemento TEXT PRIMARY KEY,
     nombre TEXT NOT NULL,
     tipo TEXT CHECK(tipo IN ('Nodo', 'IAO', 'Hotspot')) NOT NULL,
-    ubicacion TEXT
+    pendiente TEXT,
+    categoria TEXT,
+    dependencia TEXT,
+    provincia TEXT,
+    distrito TEXT,
+    localidad TEXT,
+    latitud TEXT,
+    longitud TEXT
 );
 
 -- Tabla de Órdenes de Trabajo (OTs)

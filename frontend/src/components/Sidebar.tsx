@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, FileText, Globe, Folder, ChevronDown, ChevronRight, Satellite, Radio, FileBadge2 } from 'lucide-react';
+import { LayoutDashboard, FileText, Globe, Folder, ChevronDown, ChevronRight, Satellite, Radio, FileBadge2, Users, LogOut } from 'lucide-react';
 import './Sidebar.css';
 
 interface SidebarProps {
   currentView: string;
   setCurrentView: (view: string) => void;
+  currentUser: { id_personal: number; nombre: string; cargo?: string; email: string };
+  onLogout: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, currentUser, onLogout }) => {
   const [docExpanded, setDocExpanded] = useState(currentView.startsWith('doc-'));
 
   useEffect(() => {
@@ -23,10 +25,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView })
 
   const handleDocClick = () => {
     setDocExpanded(true);
-    // Por defecto, al hacer click en el padre, ir al primer sub-item si no estamos en uno
     if (!currentView.startsWith('doc-')) {
       setCurrentView('doc-selnet');
     }
+  };
+
+  // Iniciales del usuario
+  const getInitials = (nombre: string) => {
+    const partes = nombre.trim().split(' ');
+    if (partes.length >= 2) return `${partes[0][0]}${partes[1][0]}`.toUpperCase();
+    return nombre.substring(0, 2).toUpperCase();
   };
 
   return (
@@ -106,16 +114,33 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView })
             </div>
           )}
         </div>
+
+        {/* Personal */}
+        <button
+          className={`sidebar-nav-item ${currentView === 'personal' ? 'active' : ''}`}
+          onClick={() => setCurrentView('personal')}
+        >
+          <Users size={20} className="nav-icon" />
+          <span>Personal</span>
+        </button>
       </nav>
 
+      {/* Footer: usuario logueado + logout */}
       <div className="sidebar-footer">
         <div className="user-profile">
-          <div className="user-avatar">AD</div>
+          <div className="user-avatar">{getInitials(currentUser.nombre)}</div>
           <div className="user-info">
-            <h4>Administrador</h4>
-            <span>Conectado</span>
+            <h4>{currentUser.nombre.split(' ')[0]}</h4>
+            <span>{currentUser.cargo || 'Personal'}</span>
           </div>
         </div>
+        <button
+          className="sidebar-logout-btn"
+          onClick={onLogout}
+          title="Cerrar sesión"
+        >
+          <LogOut size={16} />
+        </button>
       </div>
     </aside>
   );
