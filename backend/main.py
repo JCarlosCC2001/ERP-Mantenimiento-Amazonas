@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, File, UploadFile, Form
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Union
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -17,6 +18,13 @@ app = FastAPI(
     description="API para la gestión de Órdenes de Trabajo, Paradas de Reloj e Inventario de Amazonas",
     version="1.0.0"
 )
+
+# Montar directorio estático para subir fotos de evidencias
+import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # Configuración de CORS para permitir la conexión desde el frontend (Vite por defecto corre en 5173)
 app.add_middleware(
@@ -93,6 +101,8 @@ class OTResponse(BaseModel):
     fin_1: Optional[str] = None
     inicio_2: Optional[str] = None
     fin_2: Optional[str] = None
+    id_cuadrilla: Optional[int] = None
+    fecha_planificacion: Optional[str] = None
 
 class TransitionRequest(BaseModel):
     timestamp: Optional[datetime] = Field(None, description="Fecha/hora del cambio de estado. Por defecto es ahora")
@@ -285,16 +295,12 @@ def map_row_to_ot(row: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.get("/api/elementos", response_model=List[ElementoResponse], tags=["Elementos"])
 def get_elementos():
-    """Obtiene la lista de elementos mapeados directamente desde la hoja de Google Sheets (RED A.)."""
+    """Obtiene la lista de elementos directamente desde la base de datos."""
     try:
-        raw_rows = sheets_service.obtener_datos_red()
-        # Filtrar filas vacías
-        filtered_rows = [row for row in raw_rows if any(str(v).strip() for v in row.values())]
-        return [map_row_to_elemento(row) for row in filtered_rows]
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        elementos = ot_db.listar_elementos()
+        return elementos
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al obtener catálogo de elementos desde Sheets: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error al obtener catálogo de elementos desde la BD: {str(e)}")
 
 @app.post("/api/elementos", response_model=ElementoResponse, status_code=status.HTTP_201_CREATED, tags=["Elementos"])
 def create_elemento(elemento: ElementoCreate):
@@ -335,42 +341,25 @@ def delete_elemento(id_elemento: str):
 
 @app.get("/api/ots", response_model=List[OTResponse], tags=["Órdenes de Trabajo"])
 def get_ots(estado: Optional[str] = None):
-    """Obtiene la lista de OTs mapeada directamente desde la hoja de Google Sheets (Master)."""
+    """Obtiene la lista de OTs directamente desde la base de datos."""
     try:
-        raw_rows = sheets_service.obtener_datos_master()
-        # Filtrar filas vacías
-        filtered_rows = [row for row in raw_rows if any(str(v).strip() for v in row.values())]
-        mapped_ots = [map_row_to_ot(row) for row in filtered_rows]
-        # Filtrar aquellas que no tengan número de OT (id_ot vacío)
-        mapped_ots = [ot for ot in mapped_ots if ot["id_ot"] and str(ot["id_ot"]).strip()]
+        ots = ot_db.listar_ots(estado=estado)
         # Invertir el orden para mostrar las más recientes primero
-        mapped_ots.reverse()
-        if estado:
-            mapped_ots = [ot for ot in mapped_ots if ot["estado"].lower() == estado.lower()]
-        return mapped_ots
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        ots.reverse()
+        return ots
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al obtener OTs desde Google Sheets: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error al obtener OTs desde la BD: {str(e)}")
 
 @app.get("/api/ots/{id_ot}", response_model=OTResponse, tags=["Órdenes de Trabajo"])
 def get_ot(id_ot: str):
-    """Obtiene la información detallada de una OT específica desde Sheets."""
+    """Obtiene la información detallada de una OT específica desde la BD."""
     try:
-        raw_rows = sheets_service.obtener_datos_master()
-        filtered_rows = [row for row in raw_rows if any(str(v).strip() for v in row.values())]
-        mapped_ots = [map_row_to_ot(row) for row in filtered_rows]
-        # Filtrar las que tienen número
-        mapped_ots = [ot for ot in mapped_ots if ot["id_ot"] and str(ot["id_ot"]).strip()]
-        
-        ot = next((ot for ot in mapped_ots if ot["id_ot"] == id_ot), None)
+        ot = ot_db.obtener_ot(id_ot)
         if not ot:
-            raise HTTPException(status_code=404, detail=f"La OT '{id_ot}' no fue encontrada en la hoja Master.")
+            raise HTTPException(status_code=404, detail=f"La OT '{id_ot}' no fue encontrada en la BD.")
         return ot
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -431,75 +420,20 @@ def cerrar_ot(id_ot: str, payload: Optional[TransitionRequest] = None):
 
 @app.get("/api/red-amazonas", response_model=List[Dict[str, Any]], tags=["Red Amazonas"])
 def get_red_amazonas():
-    """Obtiene los datos de los nodos de la red desde Google Sheets (RED. AMEX)."""
+    """Obtiene los datos de los nodos de la red desde la BD."""
     try:
-        return sheets_service.obtener_datos_red()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return ot_db.listar_elementos()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- ENDPOINTS CFMs (GOOGLE SHEETS) ---
 
-def map_row_to_cfm(row: Dict[str, Any]) -> Dict[str, Any]:
-    def get_val(keys_to_search: List[str], default: Any = "") -> Any:
-        for k in keys_to_search:
-            for row_k in row.keys():
-                if row_k.strip().lower() == k.lower():
-                    return row[row_k]
-        return default
-
-    item = str(get_val(["item", "nro", "no", "id"], "") or "").strip()
-    ot = str(get_val(["ot", "orden de trabajo", "nro_ot", "número ot", "nro ot"], "") or "").strip()
-    tipo = str(get_val(["tipo", "type"], "") or "").strip()
-    codigo = str(get_val(["codigo", "código", "cod", "cod_nodo", "código nodo", "codigo nodo"], "") or "").strip()
-    
-    selnet = str(get_val([
-        "selnet", 
-        "estado de cfm en selnet", 
-        "estado selnet", 
-        "cfm selnet", 
-        "estado de cfm selnet",
-        "cfm en selnet"
-    ], "") or "").strip()
-    
-    gilat = str(get_val([
-        "gilat", 
-        "estado de cfm en gilat", 
-        "estado gilat", 
-        "cfm gilat", 
-        "estado de cfm gilat",
-        "cfm en gilat"
-    ], "") or "").strip()
-    
-    factor = str(get_val(["factor", "factor de descuento", "factor_descuento", "descuento"], "") or "").strip()
-    inicio = str(get_val(["inicio", "fecha inicio", "fecha_inicio", "f. inicio"], "") or "").strip()
-    fin = str(get_val(["fin", "fecha fin", "fecha_fin", "f. fin", "fecha termino"], "") or "").strip()
-
-    return {
-        "item": item,
-        "ot": ot,
-        "tipo": tipo,
-        "codigo": codigo,
-        "selnet": selnet,
-        "gilat": gilat,
-        "factor": factor,
-        "inicio": inicio,
-        "fin": fin,
-        "_original": row
-    }
-
 @app.get("/api/cfms", response_model=List[Dict[str, Any]], tags=["CFMs"])
 def get_cfms():
-    """Obtiene los datos de las CFMs desde Google Sheets (CFMs)."""
+    """Obtiene los datos de las CFMs desde la base de datos."""
     try:
-        raw_rows = sheets_service.obtener_datos_cfms()
-        # Filtrar filas vacías
-        filtered_rows = [row for row in raw_rows if any(str(v).strip() for v in row.values())]
-        return [map_row_to_cfm(row) for row in filtered_rows]
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return ot_db.listar_cfms()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al obtener datos de CFMs: {str(e)}")
 
@@ -581,5 +515,209 @@ def login(credentials: LoginRequest):
         }
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- MODELOS DE CUADRILLAS Y EVIDENCIAS ---
+
+class CuadrillaCreate(BaseModel):
+    nombre: str = Field(..., description="Nombre de la cuadrilla")
+    id_lider: Optional[int] = Field(None, description="ID de personal asignado como líder")
+
+class CuadrillaResponse(BaseModel):
+    id_cuadrilla: int
+    nombre: str
+    id_lider: Optional[int] = None
+    estado: str
+    nombre_lider: Optional[str] = None
+    created_at: Optional[Any] = None
+
+class GPSReportRequest(BaseModel):
+    latitud: str
+    longitud: str
+
+class GPSReportResponse(BaseModel):
+    id_posicion: int
+    id_cuadrilla: int
+    latitud: str
+    longitud: str
+    timestamp: Any
+
+class OTAssignRequest(BaseModel):
+    id_cuadrilla: Optional[int] = None
+    fecha_planificacion: Optional[str] = None
+
+class EvidenciaValidationRequest(BaseModel):
+    estado_validacion: str = Field(..., description="Aprobado o Rechazado")
+    motivo_rechazo: Optional[str] = None
+    usuario_validador_id: Optional[int] = None
+
+class EvidenciaResponse(BaseModel):
+    id_evidencia: int
+    id_ot: str
+    tipo_evidencia: str
+    url_foto: str
+    latitud_foto: Optional[str] = None
+    longitud_foto: Optional[str] = None
+    timestamp_captura: Any
+    estado_validacion: str
+    motivo_rechazo: Optional[str] = None
+    usuario_validador_id: Optional[int] = None
+    fecha_validacion: Optional[Any] = None
+
+
+# --- ENDPOINTS DE CUADRILLAS ---
+
+@app.post("/api/cuadrillas", response_model=CuadrillaResponse, status_code=status.HTTP_201_CREATED, tags=["Cuadrillas"])
+def create_cuadrilla(cuadrilla: CuadrillaCreate):
+    """Crea una nueva cuadrilla."""
+    try:
+        res = ot_db.registrar_cuadrilla(cuadrilla.nombre, cuadrilla.id_lider)
+        if not res:
+            raise HTTPException(status_code=400, detail="No se pudo crear la cuadrilla.")
+        return res
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cuadrillas", response_model=List[CuadrillaResponse], tags=["Cuadrillas"])
+def get_cuadrillas():
+    """Lista todas las cuadrillas."""
+    try:
+        return ot_db.listar_cuadrillas()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cuadrillas/{id_cuadrilla}", response_model=CuadrillaResponse, tags=["Cuadrillas"])
+def get_cuadrilla_by_id(id_cuadrilla: int):
+    """Obtiene datos de una cuadrilla por su ID."""
+    try:
+        cuadrilla = ot_db.obtener_cuadrilla(id_cuadrilla)
+        if not cuadrilla:
+            raise HTTPException(status_code=404, detail=f"Cuadrilla {id_cuadrilla} no encontrada.")
+        return cuadrilla
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ENDPOINTS DE GEOLOCALIZACIÓN (GPS) ---
+
+@app.post("/api/cuadrillas/{id_cuadrilla}/gps", tags=["Cuadrillas"])
+def report_gps(id_cuadrilla: int, payload: GPSReportRequest):
+    """Registra la ubicación GPS actual de una cuadrilla."""
+    try:
+        ok = ot_db.registrar_gps(id_cuadrilla, payload.latitud, payload.longitud)
+        if not ok:
+            raise HTTPException(status_code=400, detail="Error al registrar la ubicación GPS.")
+        return {"message": "Ubicación GPS registrada correctamente."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cuadrillas/{id_cuadrilla}/gps/ultimo", response_model=Optional[GPSReportResponse], tags=["Cuadrillas"])
+def get_ultimo_gps(id_cuadrilla: int):
+    """Obtiene la última ubicación GPS de una cuadrilla."""
+    try:
+        return ot_db.obtener_ultimo_gps(id_cuadrilla)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cuadrillas/{id_cuadrilla}/gps/historial", response_model=List[GPSReportResponse], tags=["Cuadrillas"])
+def get_historial_gps(id_cuadrilla: int, limite: int = 50):
+    """Obtiene el historial de ubicación GPS de una cuadrilla."""
+    try:
+        return ot_db.listar_historial_gps(id_cuadrilla, limite)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ENDPOINTS DE ASIGNACIÓN / PLANIFICACIÓN ---
+
+@app.post("/api/ots/{id_ot}/asignar", tags=["Órdenes de Trabajo"])
+def assign_ot(id_ot: str, payload: OTAssignRequest):
+    """Asigna una OT a una cuadrilla y le asocia una fecha de planificación."""
+    try:
+        ok = ot_db.asignar_ot(id_ot, payload.id_cuadrilla, payload.fecha_planificacion)
+        if not ok:
+            raise HTTPException(status_code=400, detail=f"No se pudo asignar la OT '{id_ot}'.")
+        return {"message": f"OT '{id_ot}' asignada correctamente."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ENDPOINTS DE EVIDENCIAS FOTOGRÁFICAS ---
+
+@app.post("/api/ots/{id_ot}/evidencias", response_model=EvidenciaResponse, status_code=status.HTTP_201_CREATED, tags=["Evidencias"])
+def upload_evidencia(
+    id_ot: str,
+    file: UploadFile = File(...),
+    tipo_evidencia: str = Form(..., description="Debe ser 'Desplazamiento', 'Antes' o 'Despues'"),
+    latitud_foto: Optional[str] = Form(None),
+    longitud_foto: Optional[str] = Form(None),
+    timestamp_captura: Optional[str] = Form(None)
+):
+    """Sube una foto de evidencia para una OT y guarda sus metadatos."""
+    try:
+        # Validar tipo de evidencia
+        if tipo_evidencia not in ('Desplazamiento', 'Antes', 'Despues'):
+            raise HTTPException(status_code=400, detail="El tipo de evidencia debe ser 'Desplazamiento', 'Antes' o 'Despues'.")
+        
+        # Validar existencia de la OT
+        ot = ot_db.obtener_ot(id_ot)
+        if not ot:
+            raise HTTPException(status_code=404, detail=f"La OT '{id_ot}' no existe.")
+            
+        # Parsear fecha de captura
+        t_captura = datetime.now()
+        if timestamp_captura:
+            try:
+                t_captura = datetime.fromisoformat(timestamp_captura)
+            except ValueError:
+                pass
+                
+        # Guardar archivo localmente
+        import time
+        epoch = int(time.time())
+        extension = os.path.splitext(file.filename)[1] or ".jpg"
+        filename = f"{id_ot.replace('/', '_')}_{tipo_evidencia}_{epoch}{extension}"
+        file_path = os.path.join(UPLOAD_DIR, filename)
+        
+        with open(file_path, "wb") as buffer:
+            import shutil
+            shutil.copyfileobj(file.file, buffer)
+            
+        # URL relativa para el cliente
+        url_foto = f"/uploads/{filename}"
+        
+        # Guardar en DB
+        res = ot_db.subir_evidencia(id_ot, tipo_evidencia, url_foto, latitud_foto, longitud_foto, t_captura)
+        if not res:
+            raise HTTPException(status_code=400, detail="No se pudo registrar la evidencia en la base de datos.")
+            
+        return res
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/ots/{id_ot}/evidencias", response_model=List[EvidenciaResponse], tags=["Evidencias"])
+def get_evidencias_ot(id_ot: str):
+    """Lista todas las evidencias registradas para una OT."""
+    try:
+        return ot_db.listar_evidencias_ot(id_ot)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/evidencias/{id_evidencia}/validar", tags=["Evidencias"])
+def validate_evidencia(id_evidencia: int, payload: EvidenciaValidationRequest):
+    """Aprueba o rechaza una foto de evidencia."""
+    try:
+        ok = ot_db.validar_evidencia(id_evidencia, payload.estado_validacion, payload.motivo_rechazo, payload.usuario_validador_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail=f"Evidencia {id_evidencia} no encontrada o error al validar.")
+        return {"message": "Evidencia validada correctamente."}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

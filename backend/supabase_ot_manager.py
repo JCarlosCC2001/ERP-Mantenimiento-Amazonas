@@ -48,20 +48,6 @@ class SupabaseOTManager:
                         longitud VARCHAR(100)
                     );
                 """)
-                # Crear tabla ordenes_trabajo
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS ordenes_trabajo (
-                        id_ot VARCHAR(100) PRIMARY KEY,
-                        id_elemento VARCHAR(100) NOT NULL REFERENCES elementos(id_elemento) ON DELETE RESTRICT ON UPDATE CASCADE,
-                        prioridad VARCHAR(50) CHECK(prioridad IN ('Alta', 'Media', 'Baja')) NOT NULL,
-                        diagnostico_inicial TEXT,
-                        hora_recepcion TIMESTAMP NOT NULL,
-                        hora_despacho TIMESTAMP,
-                        hora_llegada TIMESTAMP,
-                        hora_cierre TIMESTAMP,
-                        estado VARCHAR(50) CHECK(estado IN ('Abierta', 'Despachada', 'En Sitio', 'Cerrada')) DEFAULT 'Abierta'
-                    );
-                """)
                 # Crear tabla personal con buenas prácticas de seguridad
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS personal (
@@ -77,8 +63,87 @@ class SupabaseOTManager:
                     );
                 """)
                 # Índice para búsqueda rápida por email (auth)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_personal_email ON personal(email);")
+                
+                # Crear tabla cuadrillas
                 cur.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_personal_email ON personal(email);
+                    CREATE TABLE IF NOT EXISTS cuadrillas (
+                        id_cuadrilla SERIAL PRIMARY KEY,
+                        nombre VARCHAR(100) NOT NULL UNIQUE,
+                        id_lider INTEGER REFERENCES personal(id_personal) ON DELETE SET NULL,
+                        estado VARCHAR(50) CHECK(estado IN ('Disponible', 'En Ruta', 'En Sitio', 'Fuera de Servicio')) DEFAULT 'Disponible',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                
+                # Crear tabla ordenes_trabajo
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS ordenes_trabajo (
+                        id_ot VARCHAR(100) PRIMARY KEY,
+                        id_elemento VARCHAR(100) NOT NULL REFERENCES elementos(id_elemento) ON DELETE RESTRICT ON UPDATE CASCADE,
+                        prioridad VARCHAR(50) CHECK(prioridad IN ('Alta', 'Media', 'Baja')) NOT NULL,
+                        diagnostico_inicial TEXT,
+                        hora_recepcion TIMESTAMP NOT NULL,
+                        hora_despacho TIMESTAMP,
+                        hora_llegada TIMESTAMP,
+                        hora_cierre TIMESTAMP,
+                        estado VARCHAR(50) CHECK(estado IN ('Abierta', 'Despachada', 'En Sitio', 'Cerrada')) DEFAULT 'Abierta'
+                    );
+                """)
+                
+                # Migración incremental para agregar columnas si no existen
+                try:
+                    cur.execute("ALTER TABLE ordenes_trabajo ADD COLUMN id_cuadrilla INTEGER REFERENCES cuadrillas(id_cuadrilla) ON DELETE SET NULL;")
+                    conn.commit()
+                except psycopg2.DatabaseError:
+                    conn.rollback()
+                try:
+                    cur.execute("ALTER TABLE ordenes_trabajo ADD COLUMN fecha_planificacion VARCHAR(100);")
+                    conn.commit()
+                except psycopg2.DatabaseError:
+                    conn.rollback()
+
+                # Crear tabla historial_gps
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS historial_gps (
+                        id_posicion SERIAL PRIMARY KEY,
+                        id_cuadrilla INTEGER NOT NULL REFERENCES cuadrillas(id_cuadrilla) ON DELETE CASCADE,
+                        latitud VARCHAR(100) NOT NULL,
+                        longitud VARCHAR(100) NOT NULL,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                # Crear tabla evidencias_ot
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS evidencias_ot (
+                        id_evidencia SERIAL PRIMARY KEY,
+                        id_ot VARCHAR(100) NOT NULL REFERENCES ordenes_trabajo(id_ot) ON DELETE CASCADE,
+                        tipo_evidencia VARCHAR(50) CHECK(tipo_evidencia IN ('Desplazamiento', 'Antes', 'Despues')) NOT NULL,
+                        url_foto TEXT NOT NULL,
+                        latitud_foto VARCHAR(100),
+                        longitud_foto VARCHAR(100),
+                        timestamp_captura TIMESTAMP NOT NULL,
+                        estado_validacion VARCHAR(50) CHECK(estado_validacion IN ('Pendiente', 'Aprobado', 'Rechazado')) DEFAULT 'Pendiente',
+                        motivo_rechazo TEXT,
+                        usuario_validador_id INTEGER REFERENCES personal(id_personal) ON DELETE SET NULL,
+                        fecha_validacion TIMESTAMP
+                    );
+                """)
+                # Crear tabla cfms
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS cfms (
+                        id SERIAL PRIMARY KEY,
+                        item VARCHAR(100),
+                        ot VARCHAR(100),
+                        tipo VARCHAR(100),
+                        codigo VARCHAR(100),
+                        selnet VARCHAR(100),
+                        gilat VARCHAR(100),
+                        factor VARCHAR(100),
+                        inicio VARCHAR(100),
+                        fin VARCHAR(100),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
                 """)
             conn.commit()
 
@@ -178,16 +243,21 @@ class SupabaseOTManager:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
-    def listar_ots(self, estado: Optional[str] = None) -> List[Dict[str, Any]]:
-        query = "SELECT * FROM ordenes_trabajo"
+    def listar_ots(self, estado: Optional[str] = None, id_cuadrilla: Optional[int] = None) -> List[Dict[str, Any]]:
+        query = "SELECT * FROM ordenes_trabajo WHERE 1=1"
         params = []
         if estado:
-            query += " WHERE estado = %s"
+            query += " AND estado = %s"
             params.append(estado)
-
+        if id_cuadrilla is not None:
+            query += " AND id_cuadrilla = %s"
+            params.append(id_cuadrilla)
+            
+        query += " ORDER BY hora_recepcion ASC"
+        
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, params)
+                cur.execute(query, tuple(params))
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
 
@@ -320,8 +390,8 @@ class SupabaseOTManager:
         with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id_personal, nombre, cargo, cm, estado, email, password_hash FROM personal WHERE email = %s",
-                    (email.lower().strip(),)
+                    "SELECT id_personal, nombre, cargo, cm, estado, email, password_hash FROM personal WHERE LOWER(email) = LOWER(%s)",
+                    (email.strip(),)
                 )
                 row = cur.fetchone()
                 return dict(row) if row else None
@@ -353,3 +423,194 @@ class SupabaseOTManager:
                 )
                 conn.commit()
                 return cur.rowcount > 0
+
+    # --- GESTIÓN DE CUADRILLAS ---
+
+    def registrar_cuadrilla(self, nombre: str, id_lider: Optional[int]) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(
+                        "INSERT INTO cuadrillas (nombre, id_lider) VALUES (%s, %s) RETURNING id_cuadrilla",
+                        (nombre.strip(), id_lider)
+                    )
+                    row = cur.fetchone()
+                    conn.commit()
+                    return self.obtener_cuadrilla(row["id_cuadrilla"]) if row else None
+                except psycopg2.IntegrityError as e:
+                    conn.rollback()
+                    raise ValueError(f"No se pudo registrar la cuadrilla '{nombre}': {e}")
+
+    def listar_cuadrillas(self) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT c.id_cuadrilla, c.nombre, c.id_lider, c.estado, c.created_at, p.nombre as nombre_lider 
+                    FROM cuadrillas c 
+                    LEFT JOIN personal p ON c.id_lider = p.id_personal 
+                    ORDER BY c.nombre ASC
+                    """
+                )
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
+
+    def obtener_cuadrilla(self, id_cuadrilla: int) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT c.id_cuadrilla, c.nombre, c.id_lider, c.estado, c.created_at, p.nombre as nombre_lider 
+                    FROM cuadrillas c 
+                    LEFT JOIN personal p ON c.id_lider = p.id_personal 
+                    WHERE c.id_cuadrilla = %s
+                    """,
+                    (id_cuadrilla,)
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def asignar_ot(self, id_ot: str, id_cuadrilla: Optional[int], fecha_planificacion: Optional[str]) -> bool:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE ordenes_trabajo SET id_cuadrilla = %s, fecha_planificacion = %s WHERE id_ot = %s",
+                    (id_cuadrilla, fecha_planificacion, id_ot.strip())
+                )
+                conn.commit()
+                return cur.rowcount > 0
+
+    # --- SEGUIMIENTO GPS ---
+
+    def registrar_gps(self, id_cuadrilla: int, latitud: str, longitud: str) -> bool:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(
+                        "INSERT INTO historial_gps (id_cuadrilla, latitud, longitud) VALUES (%s, %s, %s)",
+                        (id_cuadrilla, latitud.strip(), longitud.strip())
+                    )
+                    cur.execute(
+                        "UPDATE cuadrillas SET estado = 'En Ruta' WHERE id_cuadrilla = %s AND estado = 'Disponible'",
+                        (id_cuadrilla,)
+                    )
+                    conn.commit()
+                    return True
+                except psycopg2.IntegrityError:
+                    conn.rollback()
+                    return False
+
+    def obtener_ultimo_gps(self, id_cuadrilla: int) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM historial_gps WHERE id_cuadrilla = %s ORDER BY timestamp DESC LIMIT 1",
+                    (id_cuadrilla,)
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def listar_historial_gps(self, id_cuadrilla: int, limite: int = 50) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM historial_gps WHERE id_cuadrilla = %s ORDER BY timestamp DESC LIMIT %s",
+                    (id_cuadrilla, limite)
+                )
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
+
+    # --- GESTIÓN DE EVIDENCIAS FOTOGRÁFICAS ---
+
+    def subir_evidencia(self, id_ot: str, tipo_evidencia: str, url_foto: str,
+                        latitud_foto: Optional[str], longitud_foto: Optional[str],
+                        timestamp_captura: datetime) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO evidencias_ot (id_ot, tipo_evidencia, url_foto, latitud_foto, longitud_foto, timestamp_captura)
+                        VALUES (%s, %s, %s, %s, %s, %s) RETURNING id_evidencia
+                        """,
+                        (id_ot.strip(), tipo_evidencia, url_foto, latitud_foto, longitud_foto, timestamp_captura)
+                    )
+                    row = cur.fetchone()
+                    conn.commit()
+                    return self.obtener_evidencia(row["id_evidencia"]) if row else None
+                except psycopg2.IntegrityError as e:
+                    conn.rollback()
+                    raise ValueError(f"No se pudo registrar la evidencia para la OT {id_ot}: {e}")
+
+    def obtener_evidencia(self, id_evidencia: int) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM evidencias_ot WHERE id_evidencia = %s",
+                    (id_evidencia,)
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def listar_evidencias_ot(self, id_ot: str) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM evidencias_ot WHERE id_ot = %s ORDER BY timestamp_captura ASC",
+                    (id_ot.strip(),)
+                )
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
+
+    def validar_evidencia(self, id_evidencia: int, estado_validacion: str, motivo_rechazo: Optional[str],
+                          usuario_validador_id: Optional[int]) -> bool:
+        if estado_validacion not in ('Aprobado', 'Rechazado'):
+            raise ValueError("El estado de validación debe ser 'Aprobado' o 'Rechazado'.")
+        
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE evidencias_ot 
+                    SET estado_validacion = %s, motivo_rechazo = %s, usuario_validador_id = %s, fecha_validacion = NOW()
+                    WHERE id_evidencia = %s
+                    """,
+                    (estado_validacion, motivo_rechazo, usuario_validador_id, id_evidencia)
+                )
+                conn.commit()
+                return cur.rowcount > 0
+
+    # --- GESTIÓN DE CFMs ---
+    
+    def listar_cfms(self) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM cfms ORDER BY id ASC")
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
+
+    def registrar_cfm(self, item: str, ot: str, tipo: str, codigo: str, selnet: str, gilat: str, factor: str, inicio: str, fin: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO cfms (item, ot, tipo, codigo, selnet, gilat, factor, inicio, fin)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                        """,
+                        (item, ot, tipo, codigo, selnet, gilat, factor, inicio, fin)
+                    )
+                    row = cur.fetchone()
+                    conn.commit()
+                    return dict(row) if row else None
+                except psycopg2.IntegrityError as e:
+                    conn.rollback()
+                    raise ValueError(f"No se pudo registrar la CFM: {e}")
+
+    def vaciar_cfms(self) -> bool:
+        """Elimina todas las CFMs de la base de datos para una recarga limpia."""
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("TRUNCATE TABLE cfms RESTART IDENTITY;")
+                conn.commit()
+                return True

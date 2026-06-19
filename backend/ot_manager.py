@@ -19,6 +19,27 @@ class OTManager:
     def _get_connection(self):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+import sqlite3
+import os
+from datetime import datetime
+from typing import List, Dict, Any, Optional
+from contextlib import contextmanager
+
+# Rutas dinámicas relativas a este archivo
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_FILE = os.path.join(BASE_DIR, "mantenimiento_amazonas.db")
+SCHEMA_FILE = os.path.join(BASE_DIR, "db_schema.sql")
+
+class OTManager:
+    def __init__(self, db_path: Optional[str] = None, schema_path: Optional[str] = None):
+        self.db_path = db_path or os.environ.get("AMAZONAS_DB_PATH") or DB_FILE
+        self.schema_path = schema_path or SCHEMA_FILE
+        self._initialize_db()
+
+    @contextmanager
+    def _get_connection(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
         # Habilitar soporte para llaves foráneas explicitamente por conexión
         conn.execute("PRAGMA foreign_keys = ON;")
         try:
@@ -28,46 +49,91 @@ class OTManager:
             conn.close()
 
     def _initialize_db(self):
-        """Inicializa la base de datos usando el esquema SQL provisto."""
-        if not os.path.exists(self.db_path):
-            if os.path.exists(self.schema_path):
-                with open(self.schema_path, "r", encoding="utf-8") as f:
-                    schema_sql = f.read()
-                with self._get_connection() as conn:
-                    conn.executescript(schema_sql)
-            else:
-                # Esquema embebido de respaldo si no se encuentra el archivo SQL
-                with self._get_connection() as conn:
-                    conn.execute("PRAGMA foreign_keys = ON;")
-                    conn.execute("""
-                        CREATE TABLE IF NOT EXISTS elementos (
-                            id_elemento TEXT PRIMARY KEY,
-                            nombre TEXT NOT NULL,
-                            tipo TEXT CHECK(tipo IN ('Nodo', 'IAO', 'Hotspot')) NOT NULL,
-                            pendiente TEXT,
-                            categoria TEXT,
-                            dependencia TEXT,
-                            provincia TEXT,
-                            distrito TEXT,
-                            localidad TEXT,
-                            latitud TEXT,
-                            longitud TEXT
-                        );
-                    """)
-                    conn.execute("""
-                        CREATE TABLE IF NOT EXISTS ordenes_trabajo (
-                            id_ot TEXT PRIMARY KEY,
-                            id_elemento TEXT NOT NULL,
-                            prioridad TEXT CHECK(prioridad IN ('Alta', 'Media', 'Baja')) NOT NULL,
-                            diagnostico_inicial TEXT,
-                            hora_recepcion DATETIME NOT NULL,
-                            hora_despacho DATETIME,
-                            hora_llegada DATETIME,
-                            hora_cierre DATETIME,
-                            estado TEXT CHECK(estado IN ('Abierta', 'Despachada', 'En Sitio', 'Cerrada')) DEFAULT 'Abierta',
-                            FOREIGN KEY (id_elemento) REFERENCES elementos(id_elemento) ON DELETE RESTRICT ON UPDATE CASCADE
-                        );
-                    """)
+        """Inicializa la base de datos usando el esquema SQL provisto y aplica migraciones incrementales."""
+        if os.path.exists(self.schema_path):
+            with open(self.schema_path, "r", encoding="utf-8") as f:
+                schema_sql = f.read()
+            with self._get_connection() as conn:
+                conn.executescript(schema_sql)
+        
+        # Migraciones incrementales para base de datos SQLite existente
+        with self._get_connection() as conn:
+            # 1. Crear tabla personal si no existe (por si db_schema no la creó)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS personal (
+                    id_personal INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nombre TEXT NOT NULL,
+                    cargo TEXT,
+                    cm TEXT,
+                    estado TEXT CHECK(estado IN ('Activo', 'Inactivo')) DEFAULT 'Activo',
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            # 2. Crear tabla cuadrillas
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS cuadrillas (
+                    id_cuadrilla INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nombre TEXT NOT NULL UNIQUE,
+                    id_lider INTEGER REFERENCES personal(id_personal) ON DELETE SET NULL,
+                    estado TEXT CHECK(estado IN ('Disponible', 'En Ruta', 'En Sitio', 'Fuera de Servicio')) DEFAULT 'Disponible',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            # 3. Agregar id_cuadrilla a ordenes_trabajo
+            try:
+                conn.execute("ALTER TABLE ordenes_trabajo ADD COLUMN id_cuadrilla INTEGER REFERENCES cuadrillas(id_cuadrilla) ON DELETE SET NULL;")
+            except sqlite3.OperationalError:
+                pass  # Columna ya existe
+            # 4. Agregar fecha_planificacion a ordenes_trabajo
+            try:
+                conn.execute("ALTER TABLE ordenes_trabajo ADD COLUMN fecha_planificacion TEXT;")
+            except sqlite3.OperationalError:
+                pass  # Columna ya existe
+            # 5. Crear tabla historial_gps
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS historial_gps (
+                    id_posicion INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id_cuadrilla INTEGER NOT NULL REFERENCES cuadrillas(id_cuadrilla) ON DELETE CASCADE,
+                    latitud TEXT NOT NULL,
+                    longitud TEXT NOT NULL,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            # 6. Crear tabla evidencias_ot
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS evidencias_ot (
+                    id_evidencia INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id_ot TEXT NOT NULL REFERENCES ordenes_trabajo(id_ot) ON DELETE CASCADE,
+                    tipo_evidencia TEXT CHECK(tipo_evidencia IN ('Desplazamiento', 'Antes', 'Despues')) NOT NULL,
+                    url_foto TEXT NOT NULL,
+                    latitud_foto TEXT,
+                    longitud_foto TEXT,
+                    timestamp_captura DATETIME NOT NULL,
+                    estado_validacion TEXT CHECK(estado_validacion IN ('Pendiente', 'Aprobado', 'Rechazado')) DEFAULT 'Pendiente',
+                    motivo_rechazo TEXT,
+                    usuario_validador_id INTEGER REFERENCES personal(id_personal) ON DELETE SET NULL,
+                    fecha_validacion DATETIME
+                );
+            """)
+            # 7. Crear tabla cfms
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS cfms (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item TEXT,
+                    ot TEXT,
+                    tipo TEXT,
+                    codigo TEXT,
+                    selnet TEXT,
+                    gilat TEXT,
+                    factor TEXT,
+                    inicio TEXT,
+                    fin TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
 
     # --- CRUD DE ELEMENTOS ---
 
@@ -274,5 +340,237 @@ class OTManager:
                 "UPDATE ordenes_trabajo SET estado = 'Cerrada', hora_cierre = ? WHERE id_ot = ?",
                 (self._format_datetime(hora_cierre), id_ot.strip())
             )
+            conn.commit()
+            return True
+
+    # --- GESTIÓN DE PERSONAL ---
+
+    def registrar_personal(self, nombre: str, cargo: Optional[str], cm: Optional[str],
+                           estado: str, email: str, password_hash: str) -> Optional[Dict[str, Any]]:
+        """Registra un nuevo miembro del personal."""
+        with self._get_connection() as conn:
+            try:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO personal (nombre, cargo, cm, estado, email, password_hash)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (nombre.strip(), cargo, cm, estado, email.lower().strip(), password_hash)
+                )
+                conn.commit()
+                id_pers = cursor.lastrowid
+                return self.obtener_personal(id_pers)
+            except sqlite3.IntegrityError as e:
+                raise ValueError(f"No se pudo registrar al personal '{nombre}': {e}")
+
+    def listar_personal(self) -> List[Dict[str, Any]]:
+        """Lista todo el personal."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id_personal, nombre, cargo, cm, estado, email FROM personal ORDER BY nombre ASC"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def obtener_personal(self, id_personal: int) -> Optional[Dict[str, Any]]:
+        """Obtiene datos de un miembro del personal por ID."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT id_personal, nombre, cargo, cm, estado, email FROM personal WHERE id_personal = ?",
+                (id_personal,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def obtener_personal_por_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Obtiene datos completos de un miembro por email."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT id_personal, nombre, cargo, cm, estado, email, password_hash FROM personal WHERE LOWER(email) = LOWER(?)",
+                (email.strip(),)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def actualizar_personal(self, id_personal: int, datos: Dict[str, Any]) -> bool:
+        """Actualiza campos del personal."""
+        from security import hash_password
+        if "password" in datos:
+            datos["password_hash"] = hash_password(datos.pop("password"))
+        
+        datos.pop("id_personal", None)
+        datos["updated_at"] = self._format_datetime(datetime.now())
+
+        if not datos:
+            return False
+
+        set_clause = ", ".join(f"{k} = ?" for k in datos.keys())
+        values = list(datos.values()) + [id_personal]
+
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE personal SET {set_clause} WHERE id_personal = ?",
+                values
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # --- GESTIÓN DE CUADRILLAS ---
+
+    def registrar_cuadrilla(self, nombre: str, id_lider: Optional[int]) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            try:
+                cursor = conn.execute(
+                    "INSERT INTO cuadrillas (nombre, id_lider) VALUES (?, ?)",
+                    (nombre.strip(), id_lider)
+                )
+                conn.commit()
+                return self.obtener_cuadrilla(cursor.lastrowid)
+            except sqlite3.IntegrityError as e:
+                raise ValueError(f"No se pudo registrar la cuadrilla '{nombre}': {e}")
+
+    def listar_cuadrillas(self) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT c.id_cuadrilla, c.nombre, c.id_lider, c.estado, c.created_at, p.nombre as nombre_lider 
+                FROM cuadrillas c 
+                LEFT JOIN personal p ON c.id_lider = p.id_personal 
+                ORDER BY c.nombre ASC
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def obtener_cuadrilla(self, id_cuadrilla: int) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT c.id_cuadrilla, c.nombre, c.id_lider, c.estado, c.created_at, p.nombre as nombre_lider 
+                FROM cuadrillas c 
+                LEFT JOIN personal p ON c.id_lider = p.id_personal 
+                WHERE c.id_cuadrilla = ?
+                """,
+                (id_cuadrilla,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def asignar_ot(self, id_ot: str, id_cuadrilla: Optional[int], fecha_planificacion: Optional[str]) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE ordenes_trabajo SET id_cuadrilla = ?, fecha_planificacion = ? WHERE id_ot = ?",
+                (id_cuadrilla, fecha_planificacion, id_ot.strip())
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # --- SEGUIMIENTO GPS ---
+
+    def registrar_gps(self, id_cuadrilla: int, latitud: str, longitud: str) -> bool:
+        with self._get_connection() as conn:
+            try:
+                conn.execute(
+                    "INSERT INTO historial_gps (id_cuadrilla, latitud, longitud) VALUES (?, ?, ?)",
+                    (id_cuadrilla, latitud.strip(), longitud.strip())
+                )
+                conn.execute(
+                    "UPDATE cuadrillas SET estado = 'En Ruta' WHERE id_cuadrilla = ? AND estado = 'Disponible'",
+                    (id_cuadrilla,)
+                )
+                conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False
+
+    def obtener_ultimo_gps(self, id_cuadrilla: int) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM historial_gps WHERE id_cuadrilla = ? ORDER BY timestamp DESC LIMIT 1",
+                (id_cuadrilla,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def listar_historial_gps(self, id_cuadrilla: int, limite: int = 50) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM historial_gps WHERE id_cuadrilla = ? ORDER BY timestamp DESC LIMIT ?",
+                (id_cuadrilla, limite)
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    # --- GESTIÓN DE EVIDENCIAS FOTOGRÁFICAS ---
+
+    def subir_evidencia(self, id_ot: str, tipo_evidencia: str, url_foto: str,
+                        latitud_foto: Optional[str], longitud_foto: Optional[str],
+                        timestamp_captura: datetime) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            try:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO evidencias_ot (id_ot, tipo_evidencia, url_foto, latitud_foto, longitud_foto, timestamp_captura)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (id_ot.strip(), tipo_evidencia, url_foto, latitud_foto, longitud_foto, self._format_datetime(timestamp_captura))
+                )
+                conn.commit()
+                return self.obtener_evidencia(cursor.lastrowid)
+            except sqlite3.IntegrityError as e:
+                raise ValueError(f"No se pudo registrar la evidencia para la OT {id_ot}: {e}")
+
+    def obtener_evidencia(self, id_evidencia: int) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM evidencias_ot WHERE id_evidencia = ?",
+                (id_evidencia,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def listar_evidencias_ot(self, id_ot: str) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM evidencias_ot WHERE id_ot = ? ORDER BY timestamp_captura ASC",
+                (id_ot.strip(),)
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def validar_evidencia(self, id_evidencia: int, estado_validacion: str, motivo_rechazo: Optional[str],
+                          usuario_validador_id: Optional[int]) -> bool:
+        if estado_validacion not in ('Aprobado', 'Rechazado'):
+            raise ValueError("El estado de validación debe ser 'Aprobado' o 'Rechazado'.")
+        
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE evidencias_ot 
+                SET estado_validacion = ?, motivo_rechazo = ?, usuario_validador_id = ?, fecha_validacion = ?
+                WHERE id_evidencia = ?
+                """,
+                (estado_validacion, motivo_rechazo, usuario_validador_id, self._format_datetime(datetime.now()), id_evidencia)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # --- GESTIÓN DE CFMs ---
+    
+    def listar_cfms(self) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM cfms ORDER BY id ASC").fetchall()
+            return [dict(row) for row in rows]
+
+    def registrar_cfm(self, item: str, ot: str, tipo: str, codigo: str, selnet: str, gilat: str, factor: str, inicio: str, fin: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            try:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO cfms (item, ot, tipo, codigo, selnet, gilat, factor, inicio, fin)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (item, ot, tipo, codigo, selnet, gilat, factor, inicio, fin)
+                )
+                conn.commit()
+                row = conn.execute("SELECT * FROM cfms WHERE id = ?", (cursor.lastrowid,)).fetchone()
+                return dict(row) if row else None
+            except sqlite3.IntegrityError as e:
+                raise ValueError(f"No se pudo registrar la CFM: {e}")
+
+    def vaciar_cfms(self) -> bool:
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM cfms;")
             conn.commit()
             return True

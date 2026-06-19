@@ -54,11 +54,11 @@ export function LoginView({ onLogin }: LoginViewProps) {
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="login-field">
-            <label htmlFor="login-email">Correo institucional</label>
+            <label htmlFor="login-email">Usuario / Credencial</label>
             <input
               id="login-email"
-              type="email"
-              placeholder="nombre.apellido@mantenimiento-amazonas.pe"
+              type="text"
+              placeholder="Ej. CCondor2026"
               value={email}
               onChange={(e) => { setEmail(e.target.value); setError(''); }}
               autoComplete="email"

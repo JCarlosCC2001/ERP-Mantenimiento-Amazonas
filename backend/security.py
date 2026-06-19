@@ -27,56 +27,40 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def generate_password_from_name(nombre_completo: str) -> str:
-    """
-    Genera una contraseña inicial a partir del nombre y apellido del personal.
-    
-    Reglas:
-    - Toma la primera letra del nombre en mayúscula.
-    - Usa el primer apellido completo con primera letra en mayúscula.
-    - Añade el sufijo '#Amazonas' para fortalecerla.
-    
-    Ejemplo: "Juan Carlos Perez Gomez" -> "JPerez#Amazonas"
-    Si solo tiene un nombre: "Juan" -> "Juan#Amazonas"
-    """
+    import datetime
     partes = nombre_completo.strip().split()
+    year = datetime.datetime.now().year
     if len(partes) >= 2:
-        inicial_nombre = partes[0][0].upper()
+        inicial = partes[0][0].upper()
         apellido = partes[1].capitalize()
-        return f"{inicial_nombre}{apellido}#Amazonas"
+        return f"{inicial}{apellido}{year}"
     elif len(partes) == 1:
-        return f"{partes[0].capitalize()}#Amazonas"
+        return f"{partes[0].capitalize()}{year}"
     else:
-        return "Amazonas#2026"
+        return f"Usuario{year}"
 
 
 def generate_email_from_name(nombre_completo: str, domain: str = "mantenimiento-amazonas.pe") -> str:
-    """
-    Genera un email corporativo limpio a partir del nombre completo.
-    
-    Ejemplo: "Juan Carlos Perez Gomez" -> "jcarlos.perez@mantenimiento-amazonas.pe"
-    """
+    import datetime
     import unicodedata
     import re
 
     def normalize(s: str) -> str:
         """Elimina tildes y caracteres especiales."""
         nfkd = unicodedata.normalize('NFKD', s)
-        return re.sub(r'[^\w]', '', nfkd.encode('ascii', 'ignore').decode('ascii')).lower()
+        return re.sub(r'[^\w]', '', nfkd.encode('ascii', 'ignore').decode('ascii'))
 
     partes = nombre_completo.strip().split()
-    if len(partes) == 0:
-        return f"usuario@{domain}"
-
-    if len(partes) == 1:
-        return f"{normalize(partes[0])}@{domain}"
-
-    # "Juan Carlos Perez Gomez" -> nombre="Juan Carlos", apellido="Perez"
-    # Asumiendo formato: NOMBRE(S) APELLIDO(S)
-    # Tomamos el primer nombre (si hay 2+ partes) y primer apellido
-    nombre_part = normalize(partes[0])
-    apellido_part = normalize(partes[1]) if len(partes) > 1 else ""
-
-    if apellido_part:
-        return f"{nombre_part}.{apellido_part}@{domain}"
+    year = datetime.datetime.now().year
+    
+    if len(partes) >= 2:
+        inicial = partes[0][0].upper()
+        apellido = partes[1].capitalize()
+        credencial = f"{inicial}{apellido}{year}"
+    elif len(partes) == 1:
+        credencial = f"{partes[0].capitalize()}{year}"
     else:
-        return f"{nombre_part}@{domain}"
+        credencial = f"Usuario{year}"
+        
+    return normalize(credencial)
+

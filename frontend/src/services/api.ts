@@ -20,6 +20,8 @@ export interface OT {
   hora_llegada?: string;
   hora_cierre?: string;
   estado: OTState;
+  id_cuadrilla?: number;
+  fecha_planificacion?: string;
   // Campos adicionales del Master
   informe?: string;
   noc_gilat?: string;
@@ -241,6 +243,125 @@ export async function updatePersonal(
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.detail || 'Error al actualizar el personal');
+  }
+  return response.json();
+}
+
+// --- SERVICIOS DE CUADRILLAS Y PLANIFICACIÓN ---
+
+export interface Cuadrilla {
+  id_cuadrilla: number;
+  nombre: string;
+  id_lider?: number;
+  estado: string;
+  nombre_lider?: string;
+  created_at?: string;
+}
+
+export interface EvidenciaOT {
+  id_evidencia: number;
+  id_ot: string;
+  tipo_evidencia: 'Desplazamiento' | 'Antes' | 'Despues';
+  url_foto: string;
+  latitud_foto?: string;
+  longitud_foto?: string;
+  timestamp_captura: string;
+  estado_validacion: 'Pendiente' | 'Aprobado' | 'Rechazado';
+  motivo_rechazo?: string;
+  usuario_validador_id?: number;
+  fecha_validacion?: string;
+}
+
+export async function fetchCuadrillas(): Promise<Cuadrilla[]> {
+  const response = await fetch(`${API_BASE_URL}/cuadrillas`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Error al obtener las cuadrillas');
+  }
+  return response.json();
+}
+
+export async function createCuadrilla(nombre: string, idLider?: number): Promise<Cuadrilla> {
+  const response = await fetch(`${API_BASE_URL}/cuadrillas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre, id_lider: idLider }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Error al crear la cuadrilla');
+  }
+  return response.json();
+}
+
+export async function assignOT(idOt: string, idCuadrilla: number | null, fechaPlanificacion: string | null): Promise<{ message: string }> {
+  const response = await fetch(`${API_BASE_URL}/ots/${idOt}/assign` || `${API_BASE_URL}/ots/${idOt}/asignar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id_cuadrilla: idCuadrilla, fecha_planificacion: fechaPlanificacion }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Error al asignar la orden');
+  }
+  return response.json();
+}
+
+// --- SERVICIOS DE EVIDENCIAS FOTOGRÁFICAS ---
+
+export async function fetchEvidenciasOT(idOt: string): Promise<EvidenciaOT[]> {
+  const response = await fetch(`${API_BASE_URL}/ots/${idOt}/evidencias`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Error al obtener las evidencias');
+  }
+  return response.json();
+}
+
+export async function uploadEvidenciaOT(
+  idOt: string,
+  file: File,
+  tipoEvidencia: 'Desplazamiento' | 'Antes' | 'Despues',
+  latitud?: string,
+  longitud?: string,
+  timestampCaptura?: string
+): Promise<EvidenciaOT> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('tipo_evidencia', tipoEvidencia);
+  if (latitud) formData.append('latitud_foto', latitud);
+  if (longitud) formData.append('longitud_foto', longitud);
+  if (timestampCaptura) formData.append('timestamp_captura', timestampCaptura);
+
+  const response = await fetch(`${API_BASE_URL}/ots/${idOt}/evidencias`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Error al subir la evidencia');
+  }
+  return response.json();
+}
+
+export async function validateEvidenciaOT(
+  idEvidencia: number,
+  estadoValidacion: 'Aprobado' | 'Rechazado',
+  motivoRechazo?: string,
+  usuarioValidadorId?: number
+): Promise<{ message: string }> {
+  const response = await fetch(`${API_BASE_URL}/evidencias/${idEvidencia}/validar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      estado_validacion: estadoValidacion,
+      motivo_rechazo: motivoRechazo,
+      usuario_validador_id: usuarioValidadorId,
+    }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Error al validar la evidencia');
   }
   return response.json();
 }

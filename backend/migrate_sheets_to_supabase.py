@@ -349,6 +349,10 @@ def migrar_datos():
     
     # Migrar personal
     migrar_personal()
+    
+    # Migrar CFMs
+    migrar_cfms()
+    
     print("\n[ÉXITO] Migración completa desde Google Sheets a Supabase.")
 
 
@@ -432,6 +436,102 @@ def migrar_personal():
     
     conn.close()
 
+def migrar_cfms():
+    print("\n--- Migrando CFMs ---")
+    conn = test_and_get_db_connection()
+    
+    try:
+        raw_rows = sheets_service.obtener_datos_cfms()
+    except Exception as e:
+        print(f"  [ADVERTENCIA] No se pudo leer la hoja 'CFMs': {e}")
+        conn.close()
+        return
+
+    # Filtrar filas vacías
+    filtered_rows = [row for row in raw_rows if any(str(v).strip() for v in row.values())]
+
+    if not filtered_rows:
+        print("  [INFO] No se encontraron registros en la hoja 'CFMs'. Omitiendo.")
+        conn.close()
+        return
+
+    def get_val(row, keys_to_search: list, default: Any = "") -> Any:
+        for k in keys_to_search:
+            for row_k in row.keys():
+                if row_k.strip().lower() == k.lower():
+                    return row[row_k]
+        return default
+
+    cfms_list = []
+    for row in filtered_rows:
+        item = str(get_val(row, ["item", "nro", "no", "id"], "") or "").strip()
+        ot = str(get_val(row, ["ot", "orden de trabajo", "nro_ot", "número ot", "nro ot"], "") or "").strip()
+        tipo = str(get_val(row, ["tipo", "type"], "") or "").strip()
+        codigo = str(get_val(row, ["codigo", "código", "cod", "cod_nodo", "código nodo", "codigo nodo"], "") or "").strip()
+        
+        selnet = str(get_val(row, [
+            "selnet", 
+            "estado de cfm en selnet", 
+            "estado selnet", 
+            "cfm selnet", 
+            "estado de cfm selnet",
+            "cfm en selnet"
+        ], "") or "").strip()
+        
+        gilat = str(get_val(row, [
+            "gilat", 
+            "estado de cfm en gilat", 
+            "estado gilat", 
+            "cfm gilat", 
+            "estado de cfm gilat",
+            "cfm en gilat"
+        ], "") or "").strip()
+        
+        factor = str(get_val(row, ["factor", "factor de descuento", "factor_descuento", "descuento"], "") or "").strip()
+        inicio = str(get_val(row, ["inicio", "fecha inicio", "fecha_inicio", "f. inicio"], "") or "").strip()
+        fin = str(get_val(row, ["fin", "fecha fin", "fecha_fin", "f. fin", "fecha termino"], "") or "").strip()
+        
+        if item or ot or codigo:
+            cfms_list.append((item, ot, tipo, codigo, selnet, gilat, factor, inicio, fin))
+    
+    if not cfms_list:
+        print("  [INFO] No hay CFMs válidas para migrar.")
+        conn.close()
+        return
+
+    with conn.cursor() as cur:
+        try:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS cfms (
+                    id SERIAL PRIMARY KEY,
+                    item VARCHAR(100),
+                    ot VARCHAR(100),
+                    tipo VARCHAR(100),
+                    codigo VARCHAR(100),
+                    selnet VARCHAR(100),
+                    gilat VARCHAR(100),
+                    factor VARCHAR(100),
+                    inicio VARCHAR(100),
+                    fin VARCHAR(100),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            cur.execute("TRUNCATE TABLE cfms RESTART IDENTITY;")
+            execute_values(
+                cur,
+                """
+                INSERT INTO cfms (item, ot, tipo, codigo, selnet, gilat, factor, inicio, fin)
+                VALUES %s
+                """,
+                cfms_list
+            )
+            conn.commit()
+            print(f"  [OK] {len(cfms_list)} CFMs migradas.")
+        except Exception as e:
+            print(f"  [Error] No se pudo migrar CFMs: {e}")
+            conn.rollback()
+
+    conn.close()
 
 if __name__ == "__main__":
     migrar_datos()

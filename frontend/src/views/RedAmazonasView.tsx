@@ -206,6 +206,7 @@ export const RedAmazonasView: React.FC = () => {
   const [selectedNode, setSelectedNode] = useState<any | null>(null);
   const [nodeOts, setNodeOts] = useState<OT[]>([]);
   const [loadingOts, setLoadingOts] = useState(false);
+  const [selectedType, setSelectedType] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -216,6 +217,7 @@ export const RedAmazonasView: React.FC = () => {
       setLoading(true);
       setParsedError(null);
       setSelectedNode(null);
+      setSelectedType(null);
       const res = await fetchRedAmazonas();
       setData(res);
     } catch (err: any) {
@@ -224,6 +226,14 @@ export const RedAmazonasView: React.FC = () => {
       setLoading(false);
     }
   }
+
+  const handleToggleType = (type: string) => {
+    const nextType = selectedType === type ? null : type;
+    setSelectedType(nextType);
+    if (selectedNode && nextType !== null && selectedNode.Tipo !== nextType) {
+      setSelectedNode(null);
+    }
+  };
 
   const handleCopyEmail = () => {
     navigator.clipboard.writeText(CLIENT_EMAIL);
@@ -295,6 +305,9 @@ export const RedAmazonasView: React.FC = () => {
 
   // Filtrado de registros dinámico sobre los datos normalizados
   const filteredData = normalizedData.filter(row => {
+    if (selectedType && row.Tipo !== selectedType) {
+      return false;
+    }
     if (!searchTerm.trim()) return true;
     return Object.values(row).some(value => 
       String(value).toLowerCase().includes(searchTerm.toLowerCase())
@@ -340,7 +353,10 @@ export const RedAmazonasView: React.FC = () => {
         <>
           {/* Métricas rápidas */}
           <div className="sheets-metrics">
-            <div className="card sheet-metric-card">
+            <div 
+              className={`card sheet-metric-card ${selectedType === 'Nodo' ? 'active active-nodo' : ''}`}
+              onClick={() => handleToggleType('Nodo')}
+            >
               <div className="metric-icon-wrapper el-glow">
                 <Globe size={22} className="text-primary" />
               </div>
@@ -349,7 +365,10 @@ export const RedAmazonasView: React.FC = () => {
                 <span className="metric-label">Nodos</span>
               </div>
             </div>
-            <div className="card sheet-metric-card">
+            <div 
+              className={`card sheet-metric-card ${selectedType === 'IAO' ? 'active active-iao' : ''}`}
+              onClick={() => handleToggleType('IAO')}
+            >
               <div className="metric-icon-wrapper success-glow">
                 <Search size={22} className="text-success" />
               </div>
@@ -358,7 +377,10 @@ export const RedAmazonasView: React.FC = () => {
                 <span className="metric-label">IAOs</span>
               </div>
             </div>
-            <div className="card sheet-metric-card">
+            <div 
+              className={`card sheet-metric-card ${selectedType === 'Hotspot' ? 'active active-hotspot' : ''}`}
+              onClick={() => handleToggleType('Hotspot')}
+            >
               <div className="metric-icon-wrapper warning-glow">
                 <AlertTriangle size={22} className="text-warning" />
               </div>

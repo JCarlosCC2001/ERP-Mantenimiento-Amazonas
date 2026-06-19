@@ -6,6 +6,7 @@ import { OTManagerView } from './views/OTManagerView';
 import { RedAmazonasView } from './views/RedAmazonasView';
 import { DocumentacionView } from './views/DocumentacionView';
 import { PersonalView } from './views/PersonalView';
+import { NotificationBubble } from './components/NotificationBubble';
 import type { AuthUser } from './services/api';
 
 function App() {
@@ -74,6 +75,7 @@ function App() {
       <main className="main-content">
         {renderView()}
       </main>
+      <NotificationBubble onClick={() => setCurrentView('ots')} />
     </div>
   );
 }
