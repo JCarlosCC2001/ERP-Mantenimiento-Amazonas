@@ -1,5 +1,4 @@
 from fastapi import FastAPI, HTTPException, status, File, UploadFile, Form
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -12,6 +11,7 @@ from ot_manager import OTManager
 from supabase_ot_manager import SupabaseOTManager
 from sheets_service import sheets_service
 from security import verify_password
+import cloudinary_service
 
 app = FastAPI(
     title="ERP Mantenimiento Amazonas API",
@@ -19,12 +19,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Montar directorio estático para subir fotos de evidencias
-import os
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+# Verificar configuración de Cloudinary al iniciar
+if not cloudinary_service.is_configured():
+    print("[ADVERTENCIA] Las credenciales de Cloudinary no están configuradas en .env")
+    print("  Configura CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY y CLOUDINARY_API_SECRET")
+else:
+    print("Cloudinary configurado correctamente para almacenamiento de evidencias.")
 
 # Configuración de CORS para permitir la conexión desde el frontend (Vite por defecto corre en 5173)
 app.add_middleware(
@@ -657,17 +657,25 @@ def upload_evidencia(
     longitud_foto: Optional[str] = Form(None),
     timestamp_captura: Optional[str] = Form(None)
 ):
-    """Sube una foto de evidencia para una OT y guarda sus metadatos."""
+    """Sube una foto de evidencia a Cloudinary y guarda la URL permanente en la base de datos."""
     try:
         # Validar tipo de evidencia
         if tipo_evidencia not in ('Desplazamiento', 'Antes', 'Despues'):
             raise HTTPException(status_code=400, detail="El tipo de evidencia debe ser 'Desplazamiento', 'Antes' o 'Despues'.")
-        
+
+        # Verificar que Cloudinary está configurado
+        if not cloudinary_service.is_configured():
+            raise HTTPException(
+                status_code=503,
+                detail="El servicio de almacenamiento de imágenes (Cloudinary) no está configurado. "
+                       "Contacta al administrador del sistema."
+            )
+
         # Validar existencia de la OT
         ot = ot_db.obtener_ot(id_ot)
         if not ot:
             raise HTTPException(status_code=404, detail=f"La OT '{id_ot}' no existe.")
-            
+
         # Parsear fecha de captura
         t_captura = datetime.now()
         if timestamp_captura:
@@ -675,31 +683,32 @@ def upload_evidencia(
                 t_captura = datetime.fromisoformat(timestamp_captura)
             except ValueError:
                 pass
-                
-        # Guardar archivo localmente
+
+        # Leer el archivo en memoria y subir a Cloudinary
         import time
         epoch = int(time.time())
-        extension = os.path.splitext(file.filename)[1] or ".jpg"
-        filename = f"{id_ot.replace('/', '_')}_{tipo_evidencia}_{epoch}{extension}"
-        file_path = os.path.join(UPLOAD_DIR, filename)
-        
-        with open(file_path, "wb") as buffer:
-            import shutil
-            shutil.copyfileobj(file.file, buffer)
-            
-        # URL relativa para el cliente
-        url_foto = f"/uploads/{filename}"
-        
-        # Guardar en DB
+        file_bytes = file.file.read()
+
+        upload_result = cloudinary_service.upload_evidencia(
+            file_bytes=file_bytes,
+            id_ot=id_ot,
+            tipo_evidencia=tipo_evidencia,
+            epoch=epoch
+        )
+
+        # URL pública permanente de Cloudinary (HTTPS)
+        url_foto = upload_result["secure_url"]
+
+        # Guardar en BD
         res = ot_db.subir_evidencia(id_ot, tipo_evidencia, url_foto, latitud_foto, longitud_foto, t_captura)
         if not res:
             raise HTTPException(status_code=400, detail="No se pudo registrar la evidencia en la base de datos.")
-            
+
         return res
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Error al subir la evidencia: {str(e)}")
 
 @app.get("/api/ots/{id_ot}/evidencias", response_model=List[EvidenciaResponse], tags=["Evidencias"])
 def get_evidencias_ot(id_ot: str):
